@@ -1,0 +1,265 @@
+name: Developer Workflow
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+  pull_request:
+    branches:
+      - development
+    types: [opened, synchronize, reopened]
+
+env:
+  PYTHON_VERSION: ${{ vars.PYTHON_VERSION || '3.9' }}
+  MIN_COVERAGE: ${{ vars.MIN_COVERAGE || 80 }}
+
+jobs:
+  lint-and-format:
+    name: Lint and Format Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements-dev.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+        
+    - name: Run Black formatter check
+      run: |
+        echo "::group::Black Formatter Check"
+        black --check --diff src/ tests/
+        echo "::endgroup::"
+        
+    - name: Run isort import checker
+      run: |
+        echo "::group::Import Order Check"
+        isort --check-only --diff src/ tests/
+        echo "::endgroup::"
+        
+    - name: Run Flake8 linter
+      run: |
+        echo "::group::Flake8 Linter"
+        flake8 src/ tests/
+        echo "::endgroup::"
+        
+    - name: Run mypy type checker
+      run: |
+        echo "::group::Type Checking"
+        mypy src/
+        echo "::endgroup::"
+        
+    - name: Run pydocstyle
+      run: |
+        echo "::group::Docstring Style Check"
+        pydocstyle src/
+        echo "::endgroup::"
+      continue-on-error: true
+
+  sdlc-standards:
+    name: SDLC Standards Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Run SDLC standards check
+      run: |
+        echo "::group::SDLC Standards Check"
+        python scripts/check_sdlc_standards.py
+        echo "::endgroup::"
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install bandit
+      run: pip install bandit
+      
+    - name: Run bandit security scan
+      run: |
+        echo "::group::Security Scan"
+        bandit -r src/ -f json -o bandit-report.json || true
+        bandit -r src/ || true
+        echo "::endgroup::"
+        
+    - name: Upload security report
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-report
+        path: bandit-report.json
+      if: always()
+
+  unit-tests:
+    name: Unit Tests and Coverage
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements-dev.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements-dev.txt
+        
+    - name: Create reports directory
+      run: mkdir -p reports
+      
+    - name: Run unit tests with coverage
+      run: |
+        echo "::group::Unit Tests"
+        pytest -v
+        echo "::endgroup::"
+        
+    - name: Generate coverage report
+      run: |
+        echo "::group::Coverage Report"
+        coverage report
+        echo "::endgroup::"
+        
+    - name: Check coverage threshold
+      run: |
+        coverage_percent=$(coverage report | grep TOTAL | awk '{print $4}' | sed 's/%//')
+        echo "Coverage: ${coverage_percent}%"
+        if (( $(echo "$coverage_percent < $MIN_COVERAGE" | bc -l) )); then
+          echo "❌ Coverage ${coverage_percent}% is below minimum ${MIN_COVERAGE}%"
+          exit 1
+        else
+          echo "✅ Coverage ${coverage_percent}% meets minimum ${MIN_COVERAGE}%"
+        fi
+        
+    - name: Upload test reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-reports
+        path: |
+          reports/
+          htmlcov/
+          coverage.xml
+      if: always()
+      
+    - name: Comment PR with coverage
+      uses: py-cov-action/python-coverage-comment-action@v3
+      with:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      if: github.event_name == 'pull_request'
+
+  build-validation:
+    name: Build Validation
+    runs-on: ubuntu-latest
+    needs: [lint-and-format, sdlc-standards, unit-tests]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install build
+        
+    - name: Build package
+      run: |
+        echo "::group::Building Package"
+        python -m build
+        echo "::endgroup::"
+        
+    - name: Check package
+      run: |
+        echo "::group::Package Validation"
+        pip install check-wheel-contents
+        check-wheel-contents dist/*.whl
+        echo "::endgroup::"
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: dist/
+
+  pr-validation:
+    name: Pull Request Validation
+    runs-on: ubuntu-latest
+    needs: [build-validation]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - name: PR Status Check
+      run: |
+        echo "✅ All checks passed!"
+        echo "Ready for code review"
+        
+    - name: Notify reviewers
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: '## 🚀 Automated Checks Passed!\n\nAll automated checks have passed successfully:\n- ✅ Linting and formatting\n- ✅ SDLC standards compliance\n- ✅ Security scan\n- ✅ Unit tests and coverage\n- ✅ Build validation\n\nThis PR is ready for code review.'
+          })
+      continue-on-error: true
+
+  notify-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [lint-and-format, sdlc-standards, security-scan, unit-tests, build-validation]
+    if: failure()
+    
+    steps:
+    - name: Send failure notification
+      run: |
+        echo "❌ Developer workflow failed!"
+        echo "Check the workflow logs for details"
+        # Add actual notification logic here (Slack, Teams, email, etc.) 

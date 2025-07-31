@@ -1,0 +1,4 @@
+# Core dependencies
+# Currently none required for the calculator module
+
+# Add your production dependencies here 

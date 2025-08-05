@@ -14,6 +14,7 @@ class Calculator:
     def __init__(self) -> None:
         """Initialize the calculator with a history of operations."""
         self.history: List[str] = []
+        self.last_result = 0
 
     def add(self, a: Union[int, float], b: Union[int, float]) -> Union[int, float]:
         """

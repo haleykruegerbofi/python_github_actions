@@ -40,6 +40,9 @@ class SDLCChecker:
     def check_file_naming(self) -> None:
         """Check that Python files follow naming conventions."""
         for py_file in self.root_path.rglob("*.py"):
+            # Skip virtual environment and other common directories
+            if any(part in py_file.parts for part in ['venv', '.venv', 'env', '__pycache__', '.git']):
+                continue
             if py_file.is_file():
                 filename = py_file.stem
                 
@@ -78,6 +81,9 @@ class SDLCChecker:
     def check_function_naming(self) -> None:
         """Check that functions and classes follow naming conventions."""
         for py_file in self.root_path.rglob("*.py"):
+            # Skip virtual environment and other common directories
+            if any(part in py_file.parts for part in ['venv', '.venv', 'env', '__pycache__', '.git']):
+                continue
             if not py_file.is_file():
                 continue
                 
@@ -108,6 +114,9 @@ class SDLCChecker:
     def check_docstrings(self) -> None:
         """Check that all public functions and classes have docstrings."""
         for py_file in self.root_path.rglob("*.py"):
+            # Skip virtual environment and other common directories
+            if any(part in py_file.parts for part in ['venv', '.venv', 'env', '__pycache__', '.git']):
+                continue
             if not py_file.is_file():
                 continue
                 
@@ -140,6 +149,9 @@ class SDLCChecker:
         max_file_lines = 500
         
         for py_file in self.root_path.rglob("*.py"):
+            # Skip virtual environment and other common directories
+            if any(part in py_file.parts for part in ['venv', '.venv', 'env', '__pycache__', '.git']):
+                continue
             if not py_file.is_file():
                 continue
             
@@ -172,6 +184,9 @@ class SDLCChecker:
     def check_imports(self) -> None:
         """Check import organization and style."""
         for py_file in self.root_path.rglob("*.py"):
+            # Skip virtual environment and other common directories
+            if any(part in py_file.parts for part in ['venv', '.venv', 'env', '__pycache__', '.git']):
+                continue
             if not py_file.is_file():
                 continue
             
